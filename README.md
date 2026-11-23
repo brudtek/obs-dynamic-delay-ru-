@@ -33,8 +33,10 @@
 
 ## Установка
 
-Закройте OBS, запустите `obs-dynamic-delay-1.2.1-ru-setup.exe` и подтвердите
-запрос прав администратора. Затем в OBS: **Док-панели → Управление задержкой**.
+Скачайте [obs-dynamic-delay-1.2.1-ru-setup.exe](https://github.com/brudtek/obs-dynamic-delay-ru-/releases/latest/download/obs-dynamic-delay-1.2.1-ru-setup.exe),
+запустите и нажмите **Установить** — папка плагинов OBS уже выбрана, для
+переносной OBS её можно сменить кнопкой «Обзор…». Затем в OBS:
+**Док-панели → Управление задержкой**.
 Удаление — через «Параметры → Приложения». Подробнее и установка вручную —
 [docs/install.md](docs/install.md).
 
