@@ -26,11 +26,11 @@ HoldMediaHub::~HoldMediaHub()
 std::shared_ptr<HoldMediaHub> HoldMediaHub::create(obs_source_t *holdScene, HoldAudioConfig config, std::string &error)
 {
 	if (!holdScene) {
-		error = "Select a valid hold scene first.";
+		error = "Сначала выберите сцену ожидания.";
 		return {};
 	}
 	if (config.mode == HoldAudioMode::DedicatedSource && !config.dedicatedSource) {
-		error = "Select a valid dedicated hold audio source.";
+		error = "Выберите отдельный источник звука сцены ожидания.";
 		return {};
 	}
 	auto hub = std::shared_ptr<HoldMediaHub>(new HoldMediaHub(holdScene, config));
@@ -71,7 +71,7 @@ bool HoldMediaHub::create_view(std::string &error)
 {
 	obs_video_info videoInfo{};
 	if (!obs_get_video_info(&videoInfo)) {
-		error = "OBS video is not initialized.";
+		error = "Видео OBS ещё не готово.";
 		return false;
 	}
 
@@ -85,12 +85,12 @@ bool HoldMediaHub::create_view(std::string &error)
 
 	view_ = obs_view_create();
 	if (!view_) {
-		error = "Could not create the private hold-scene view.";
+		error = "Не удалось создать внутренний вид сцены ожидания.";
 		return false;
 	}
 	video_ = obs_view_add2(view_, &videoInfo);
 	if (!video_) {
-		error = "Could not attach video output to the private hold-scene view.";
+		error = "Не удалось подключить видео к сцене ожидания.";
 		return false;
 	}
 
@@ -146,12 +146,12 @@ bool HoldMediaHub::create_audio(std::string &error)
 {
 	audio_t *mainAudio = obs_get_audio();
 	if (!mainAudio) {
-		error = "OBS audio is not initialized.";
+		error = "Звук OBS ещё не готов.";
 		return false;
 	}
 	const audio_output_info *mainInfo = audio_output_get_info(mainAudio);
 	if (!mainInfo) {
-		error = "OBS audio is not initialized.";
+		error = "Звук OBS ещё не готов.";
 		return false;
 	}
 
@@ -168,7 +168,7 @@ bool HoldMediaHub::create_audio(std::string &error)
 	info.input_callback = &HoldMediaHub::audio_input;
 	info.input_param = this;
 	if (audio_output_open(&audio_, &info) != AUDIO_OUTPUT_SUCCESS) {
-		error = "Could not create the private hold-scene audio clock.";
+		error = "Не удалось подготовить звук сцены ожидания.";
 		return false;
 	}
 	ownsAudio_ = true;
@@ -180,7 +180,7 @@ bool HoldMediaHub::start(std::string &error)
 	if (started_)
 		return true;
 	if (config_.mode == HoldAudioMode::ReservedTrack && config_.reservedMixerIndex >= MAX_AUDIO_MIXES) {
-		error = "The reserved OBS audio track is outside the valid 1-6 range.";
+		error = "Резервная дорожка вне диапазона 1–6.";
 		return false;
 	}
 	const bool ready = create_view(error) && create_audio(error);

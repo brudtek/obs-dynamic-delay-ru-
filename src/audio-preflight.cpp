@@ -114,7 +114,7 @@ void normalize_names(std::vector<std::string> &names)
 		text << names[index];
 	}
 	if (shown < names.size())
-		text << " and " << (names.size() - shown) << " more";
+		text << " и ещё " << (names.size() - shown);
 	return text.str();
 }
 
@@ -409,17 +409,17 @@ AudioPreflightResult preflight_hold_audio(const DelaySettings &settings, obs_sou
 			if (dedicated_source_is_exclusive(holdScene, dedicatedSource, dedicatedConflicts)) {
 				result.effectiveMode = HoldAudioMode::DedicatedSource;
 				result.degraded = true;
-				result.message = "The hold scene is unavailable; using the dedicated audio source.";
+				result.message = "Сцена ожидания недоступна — используется отдельный источник звука.";
 				return result;
 			}
 			if (!dedicatedConflicts.empty())
 				return make_silence_fallback(
 					settings.holdAudioMode, mixerIndex,
-					"The hold scene is unavailable and the dedicated source is not exclusive (" +
-						format_names(dedicatedConflicts) + "); using silence.",
+					"Сцена ожидания недоступна, а отдельный источник звучит где-то ещё (" +
+						format_names(dedicatedConflicts) + ") — будет тишина.",
 					std::move(dedicatedConflicts));
 			return make_silence_fallback(settings.holdAudioMode, mixerIndex,
-						     "The hold scene is unavailable; using silence.");
+						     "Сцена ожидания недоступна — будет тишина.");
 		}
 
 		const AudioTree holdTree = collect_audio_tree(holdScene);
@@ -427,8 +427,8 @@ AudioPreflightResult preflight_hold_audio(const DelaySettings &settings, obs_sou
 		if (result.conflictNames.empty()) {
 			result.message =
 				holdTree.leaves.empty()
-					? "The hold scene has no audio leaves; its hold audio will be silent."
-					: "The hold scene audio tree is isolated and can use the private scene mix.";
+					? "В сцене ожидания нет источников звука — будет тишина."
+					: "Звук сцены ожидания нигде больше не используется и будет взят из самой сцены.";
 			return result;
 		}
 
@@ -437,9 +437,9 @@ AudioPreflightResult preflight_hold_audio(const DelaySettings &settings, obs_sou
 		if (dedicated_source_is_exclusive(holdScene, dedicatedSource, dedicatedConflicts)) {
 			result.effectiveMode = HoldAudioMode::DedicatedSource;
 			result.degraded = true;
-			result.message = "The scene mix references audio sources also used elsewhere, including hidden "
-					 "scene items (" +
-					 names + "); using the exclusive dedicated audio source.";
+			result.message = "Источники звука сцены ожидания используются и в других местах, включая скрытые "
+					 "элементы сцен (" +
+					 names + ") — используется отдельный источник звука.";
 			return result;
 		}
 		if (!dedicatedConflicts.empty()) {
@@ -447,16 +447,16 @@ AudioPreflightResult preflight_hold_audio(const DelaySettings &settings, obs_sou
 				append_unique(result.conflictNames, name);
 			normalize_names(result.conflictNames);
 			return make_silence_fallback(settings.holdAudioMode, mixerIndex,
-						     "The scene mix is shared (" + names +
-							     ") and the dedicated source is not exclusive (" +
-							     format_names(dedicatedConflicts) + "); using silence.",
+						     "Звук сцены ожидания используется и в других местах (" + names +
+							     "), а отдельный источник звучит где-то ещё (" +
+							     format_names(dedicatedConflicts) + ") — будет тишина.",
 						     std::move(result.conflictNames));
 		}
 		return make_silence_fallback(
 			settings.holdAudioMode, mixerIndex,
-			"The scene mix references audio sources also used elsewhere, including hidden "
-			"scene items (" +
-				names + "); no valid dedicated source is available, so hold audio will be silent.",
+			"Источники звука сцены ожидания используются и в других местах, включая скрытые "
+			"элементы сцен (" +
+				names + "). Отдельный источник не выбран — будет тишина.",
 			std::move(result.conflictNames));
 	}
 
@@ -464,15 +464,15 @@ AudioPreflightResult preflight_hold_audio(const DelaySettings &settings, obs_sou
 		if (!valid_dedicated_source(dedicatedSource))
 			return make_silence_fallback(
 				settings.holdAudioMode, mixerIndex,
-				"The selected dedicated source is unavailable or has no audio; using silence.");
+				"Выбранный отдельный источник недоступен или без звука — будет тишина.");
 		std::vector<std::string> conflicts;
 		if (!dedicated_source_is_exclusive(holdScene, dedicatedSource, conflicts))
 			return make_silence_fallback(
 				settings.holdAudioMode, mixerIndex,
-				"The dedicated source is active or referenced outside the hold path (" +
-					format_names(conflicts) + "); using silence to avoid changing Program audio.",
+				"Отдельный источник звучит или используется вне сцены ожидания (" +
+					format_names(conflicts) + ") — будет тишина, чтобы не менять звук программы.",
 				std::move(conflicts));
-		result.message = "The dedicated hold audio source is available and exclusive.";
+		result.message = "Отдельный источник звука доступен и больше нигде не используется.";
 		return result;
 	}
 
@@ -480,20 +480,20 @@ AudioPreflightResult preflight_hold_audio(const DelaySettings &settings, obs_sou
 		if (settings.reservedAudioTrack < 1 || settings.reservedAudioTrack > MAX_AUDIO_MIXES)
 			return make_silence_fallback(
 				settings.holdAudioMode, mixerIndex,
-				"The reserved OBS track is outside the valid 1-6 range; using silence.");
+				"Резервная дорожка вне диапазона 1–6 — будет тишина.");
 		if (!holdScene)
 			return make_silence_fallback(
 				settings.holdAudioMode, mixerIndex,
-				"The hold scene is unavailable; reserved-track audio will be silent.");
+				"Сцена ожидания недоступна — звук резервной дорожки будет тишиной.");
 		const AudioTree holdTree = collect_audio_tree(holdScene);
 		std::vector<std::string> isolationConflicts;
 		collect_scene_mix_conflicts(holdScene, holdTree, isolationConflicts);
 		if (!isolationConflicts.empty())
 			return make_silence_fallback(
 				settings.holdAudioMode, mixerIndex,
-				"The reserved-track hold scene references audio sources also used elsewhere, including "
-				"hidden scene items (" +
-					format_names(isolationConflicts) + "); using silence.",
+				"Источники звука сцены ожидания используются и в других местах, включая "
+				"скрытые элементы сцен (" +
+					format_names(isolationConflicts) + ") — будет тишина.",
 				std::move(isolationConflicts));
 		const uint32_t bit = 1U << mixerIndex;
 		const bool holdSourceAssigned =
@@ -502,38 +502,38 @@ AudioPreflightResult preflight_hold_audio(const DelaySettings &settings, obs_sou
 		if (!holdSourceAssigned)
 			return make_silence_fallback(
 				settings.holdAudioMode, mixerIndex,
-				"No audio leaf in the hold scene is assigned to reserved OBS track " +
-					std::to_string(settings.reservedAudioTrack) + "; using silence.");
+				"Ни один источник звука сцены ожидания не назначен на дорожку " +
+					std::to_string(settings.reservedAudioTrack) + " — будет тишина.");
 
 		std::vector<std::string> outputConflicts;
 		collect_output_conflicts(primaryOutputs, mixerIndex, outputConflicts);
 		std::vector<std::string> sourceConflicts;
 		collect_external_source_conflicts(holdTree, mixerIndex, sourceConflicts);
 		for (std::string &name : outputConflicts)
-			append_unique(result.conflictNames, "Output: " + name);
+			append_unique(result.conflictNames, "Выход: " + name);
 		for (std::string &name : sourceConflicts)
-			append_unique(result.conflictNames, "Source: " + name);
+			append_unique(result.conflictNames, "Источник: " + name);
 		normalize_names(result.conflictNames);
 		if (!result.conflictNames.empty()) {
 			const std::string names = format_names(result.conflictNames);
 			return make_silence_fallback(settings.holdAudioMode, mixerIndex,
-						     "OBS track " + std::to_string(settings.reservedAudioTrack) +
-							     " is not exclusive to the hold scene (" + names +
-							     "); using silence.",
+						     "Дорожка " + std::to_string(settings.reservedAudioTrack) +
+							     " используется не только сценой ожидания (" + names +
+							     ") — будет тишина.",
 						     std::move(result.conflictNames));
 		}
-		result.message = "OBS track " + std::to_string(settings.reservedAudioTrack) +
-				 " is reserved exclusively for the hold scene.";
+		result.message = "Дорожка " + std::to_string(settings.reservedAudioTrack) +
+				 " отведена только под сцену ожидания.";
 		return result;
 	}
 
 	case HoldAudioMode::Silence:
-		result.message = "Hold audio is intentionally silent.";
+		result.message = "Звук сцены ожидания отключён — тишина.";
 		return result;
 	}
 
 	return make_silence_fallback(settings.holdAudioMode, mixerIndex,
-				     "The requested hold audio mode is unknown; using silence.");
+				     "Неизвестный режим звука — будет тишина.");
 }
 
 } // namespace dynamic_delay

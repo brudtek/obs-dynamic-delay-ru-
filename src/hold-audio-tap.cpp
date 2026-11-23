@@ -69,11 +69,11 @@ bool HoldAudioTap::connect_main_clock(audio_t *audio, const std::size_t mixerInd
 	if (mainAudioClock_)
 		return true;
 	if (!audio || !state_ || mixerIndex >= MAX_AUDIO_MIXES) {
-		error = "OBS main audio clock is unavailable.";
+		error = "Основной звуковой поток OBS недоступен.";
 		return false;
 	}
 	if (!audio_output_connect(audio, mixerIndex, nullptr, &HoldAudioTap::main_clock_output, state_.get())) {
-		error = "Could not observe the main OBS audio clock.";
+		error = "Не удалось подключиться к основному звуковому потоку OBS.";
 		return false;
 	}
 	mainAudioClock_ = audio;
@@ -282,7 +282,7 @@ bool HoldAudioTap::create(std::string &error)
 		return true;
 	if (!state_ || !state_->holdScene ||
 	    (state_->config.mode == HoldAudioMode::DedicatedSource && !state_->audioSource)) {
-		error = "The hold audio tap has no valid source.";
+		error = "Для звука сцены ожидания нет подходящего источника.";
 		return false;
 	}
 	obs_data_t *settings = obs_data_create();
@@ -292,7 +292,7 @@ bool HoldAudioTap::create(std::string &error)
 	obs_source_t *created = obs_source_create_private(AudioTapSourceId, name.str().c_str(), settings);
 	obs_data_release(settings);
 	if (!created) {
-		error = "Could not create the private hold audio tap source.";
+		error = "Не удалось создать внутренний источник звука сцены ожидания.";
 		return false;
 	}
 	wrapperSource_ = created;

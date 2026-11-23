@@ -34,8 +34,8 @@
         }
     },
     "name": "obs-dynamic-delay",
-    "displayName": "OBS Dynamic Delay",
-    "version": "1.2.0",
+    "displayName": "OBS Dynamic Delay (русская упрощённая сборка)",
+    "version": "1.2.1",
     "author": "Aritz",
     "website": "https://www.obsdelay.com",
     "email": "stanixdor@users.noreply.github.com"

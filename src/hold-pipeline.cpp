@@ -78,14 +78,14 @@ bool capture_start(void *data)
 	if (!sink || !sink->output)
 		return false;
 	if (!obs_output_can_begin_data_capture(sink->output, 0)) {
-		obs_output_set_last_error(sink->output, "The internal hold output cannot begin data capture.");
+		obs_output_set_last_error(sink->output, "Внутренний выход сцены ожидания не может начать захват.");
 		obs_log(LOG_ERROR, "Internal hold output cannot begin data capture");
 		return false;
 	}
 	if (!obs_output_initialize_encoders(sink->output, 0)) {
 		const char *lastError = obs_output_get_last_error(sink->output);
 		if (!lastError || !*lastError) {
-			obs_output_set_last_error(sink->output, "The internal hold encoders could not be initialized.");
+			obs_output_set_last_error(sink->output, "Не удалось запустить кодировщики сцены ожидания.");
 			lastError = obs_output_get_last_error(sink->output);
 		}
 		obs_log(LOG_ERROR, "Internal hold encoder initialization failed: %s",
@@ -93,7 +93,7 @@ bool capture_start(void *data)
 		return false;
 	}
 	if (!obs_output_begin_data_capture(sink->output, 0)) {
-		obs_output_set_last_error(sink->output, "The internal hold output could not start data capture.");
+		obs_output_set_last_error(sink->output, "Внутренний выход сцены ожидания не смог начать захват.");
 		obs_log(LOG_ERROR, "Internal hold output could not start data capture");
 		return false;
 	}
@@ -179,7 +179,7 @@ void SharedHoldEncoding::receive(encoder_packet *packet)
 obs_encoder_t *SharedHoldEncoding::clone_video_encoder(std::string &error)
 {
 	if (!originalVideo_) {
-		error = "The primary output has no video encoder.";
+		error = "У основного выхода нет видеокодировщика.";
 		return nullptr;
 	}
 	obs_data_t *settings = obs_encoder_get_settings(originalVideo_);
@@ -189,7 +189,7 @@ obs_encoder_t *SharedHoldEncoding::clone_video_encoder(std::string &error)
 		obs_video_encoder_create(obs_encoder_get_id(originalVideo_), name.str().c_str(), settings, nullptr);
 	obs_data_release(settings);
 	if (!clone) {
-		error = std::string("Could not clone video encoder: ") + obs_encoder_get_id(originalVideo_);
+		error = std::string("Не удалось создать копию видеокодировщика: ") + obs_encoder_get_id(originalVideo_);
 		return nullptr;
 	}
 	obs_encoder_set_video(clone, mediaHub_->video());
@@ -214,7 +214,7 @@ obs_encoder_t *SharedHoldEncoding::clone_audio_encoder(const std::size_t index, 
 							mediaHub_->encoder_mixer_index(original), nullptr);
 	obs_data_release(settings);
 	if (!clone) {
-		error = std::string("Could not clone audio encoder: ") + obs_encoder_get_id(original);
+		error = std::string("Не удалось создать копию аудиокодировщика: ") + obs_encoder_get_id(original);
 		return nullptr;
 	}
 	obs_encoder_set_audio(clone, mediaHub_->audio());
@@ -230,7 +230,7 @@ bool SharedHoldEncoding::create_capture_output(std::string &error)
 	captureOutput_ = obs_output_create(CaptureOutputId, name.str().c_str(), settings, nullptr);
 	obs_data_release(settings);
 	if (!captureOutput_) {
-		error = "Could not create the internal packet collector.";
+		error = "Не удалось создать внутренний сборщик пакетов.";
 		return false;
 	}
 	obs_output_set_video_encoder(captureOutput_, videoEncoder_);
@@ -246,7 +246,7 @@ bool SharedHoldEncoding::start(std::string &error)
 	if (started_) {
 		if (captureOutput_ && obs_output_active(captureOutput_))
 			return true;
-		error = "The shared hold encoder is no longer active.";
+		error = "Кодировщик сцены ожидания остановлен.";
 		return false;
 	}
 	videoEncoder_ = clone_video_encoder(error);
@@ -263,7 +263,7 @@ bool SharedHoldEncoding::start(std::string &error)
 		return false;
 	if (!obs_output_start(captureOutput_)) {
 		const char *lastError = obs_output_get_last_error(captureOutput_);
-		error = lastError && *lastError ? lastError : "The hold-scene encoder could not start.";
+		error = lastError && *lastError ? lastError : "Кодировщик сцены ожидания не запустился.";
 		return false;
 	}
 	started_ = true;
@@ -294,13 +294,13 @@ bool SharedHoldEncoding::compatible_with(obs_output_t *primaryOutput, std::strin
 	if (!primaryVideo || !videoEncoder_ ||
 	    std::strcmp(obs_encoder_get_codec(primaryVideo), obs_encoder_get_codec(videoEncoder_)) != 0 ||
 	    !same_extradata(primaryVideo, videoEncoder_)) {
-		error = "The hold video encoder produced incompatible codec headers.";
+		error = "Кодировщик сцены ожидания выдал несовместимые заголовки видео.";
 		return false;
 	}
 	for (std::size_t index = 0; index < audioEncoders_.size(); ++index) {
 		obs_encoder_t *primaryAudio = obs_output_get_audio_encoder(primaryOutput, index);
 		if (!!primaryAudio != !!audioEncoders_[index]) {
-			error = "The hold audio track layout does not match the output.";
+			error = "Звуковые дорожки сцены ожидания не совпадают с выходом.";
 			return false;
 		}
 		if (primaryAudio && (std::strcmp(obs_encoder_get_codec(primaryAudio),
@@ -316,7 +316,7 @@ bool SharedHoldEncoding::compatible_with(obs_output_t *primaryOutput, std::strin
 std::shared_ptr<SharedHoldEncoding> HoldMediaHub::acquire_encoding(obs_output_t *primaryOutput, std::string &error)
 {
 	if (!started_ || !primaryOutput) {
-		error = "The shared hold media hub is not active.";
+		error = "Сцена ожидания не запущена.";
 		return {};
 	}
 	// Controller-thread lifecycle only. Encoder callbacks never touch this

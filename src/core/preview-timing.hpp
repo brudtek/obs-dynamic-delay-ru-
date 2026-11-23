@@ -12,8 +12,6 @@ inline constexpr uint64_t PreviewIntervalNs = 500'000'000ULL;
 inline constexpr int preview_output_priority(const std::string_view label) noexcept
 {
 	if (label == "Streaming")
-		return 3;
-	if (label == "Multistream")
 		return 2;
 	if (label == "Recording")
 		return 1;
@@ -22,7 +20,7 @@ inline constexpr int preview_output_priority(const std::string_view label) noexc
 
 // Output timing vectors originate in an unordered session map. Select one
 // audience explicitly so an unrelated recording pause cannot suspend a live
-// multistream preview. The controller and widget must use the same policy.
+// streaming preview. The controller and widget must use the same policy.
 template<class Iterator> Iterator preview_output(Iterator first, Iterator last)
 {
 	return std::max_element(first, last, [](const auto &left, const auto &right) {

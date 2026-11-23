@@ -14,33 +14,6 @@ permissions:
   contents: read
 
 jobs:
-  website:
-    name: Validate Website 🌐
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        shell: bash
-        working-directory: website
-    steps:
-      - name: Check Out Repository 📥
-        uses: actions/checkout@v4
-
-      - name: Set Up Node.js 24 🟢
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-
-      - name: Install Website Dependencies 📦
-        run: npm ci
-
-      - name: Lint Website 🧹
-        run: npm run lint
-
-      - name: Build Website 🏗️
-        run: npm run build
-
   check-format:
     name: Check Formatting 🔍
     if: github.ref_type != 'tag'
@@ -59,7 +32,7 @@ jobs:
     name: Create Release 🛰️
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
-    needs: [build-project, website]
+    needs: [build-project]
     permissions:
       contents: write
     defaults:

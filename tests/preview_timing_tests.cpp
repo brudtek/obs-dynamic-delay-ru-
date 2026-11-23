@@ -105,7 +105,7 @@ void telemetry_sanitization_has_bounded_integer_conversions()
 void native_streaming_has_priority_in_every_session_order()
 {
 	std::vector<dynamic_delay::DelaySnapshot::OutputTiming> outputs(3);
-	outputs[0].label = "Multistream";
+	outputs[0].label = "Other";
 	outputs[0].effectiveSeconds = 20.0;
 	outputs[1].label = "Recording";
 	outputs[1].paused = true;
@@ -125,24 +125,24 @@ void native_streaming_has_priority_in_every_session_order()
 	check(permutations == 6, "all three-output insertion orders must be covered");
 }
 
-void multistream_wins_over_a_paused_recording()
+void streaming_wins_over_a_paused_recording()
 {
 	std::vector<dynamic_delay::DelaySnapshot::OutputTiming> outputs(2);
 	outputs[0].label = "Recording";
 	outputs[0].paused = true;
 	outputs[0].effectiveSeconds = 50.0;
-	outputs[1].label = "Multistream";
+	outputs[1].label = "Streaming";
 	outputs[1].effectiveSeconds = 30.0;
 	outputs[1].emittingDelayed = true;
 	outputs[1].emittedVideoTimestampNs = 123;
 	outputs[1].bufferStartTimestampNs = 100;
 	for (int order = 0; order < 2; ++order) {
 		const auto selected = preview_output(outputs.begin(), outputs.end());
-		check(selected->label == "Multistream" && !selected->paused && selected->emittingDelayed,
-		      "recording pause must not suspend the multistream audience preview");
+		check(selected->label == "Streaming" && !selected->paused && selected->emittingDelayed,
+		      "recording pause must not suspend the streaming audience preview");
 		check(selected->effectiveSeconds == 30.0 && selected->emittedVideoTimestampNs == 123 &&
 			      selected->bufferStartTimestampNs == 100,
-		      "history pin and displayed frame must follow multistream rather than recording");
+		      "history pin and displayed frame must follow streaming rather than recording");
 		std::reverse(outputs.begin(), outputs.end());
 	}
 }
@@ -168,7 +168,7 @@ int main()
 		active_timing_is_independent_of_slider_and_keeps_history();
 		telemetry_sanitization_has_bounded_integer_conversions();
 		native_streaming_has_priority_in_every_session_order();
-		multistream_wins_over_a_paused_recording();
+		streaming_wins_over_a_paused_recording();
 		recording_only_and_empty_selection_are_preserved();
 		std::cout << "8/8 production preview timing tests passed\n";
 		return 0;

@@ -1,6 +1,7 @@
 #include "audience-preview.hpp"
 
 #include "delay-controller.hpp"
+#include "module-text.hpp"
 
 #include <util/platform.h>
 
@@ -29,12 +30,15 @@ AudiencePreviewWidget::AudiencePreviewWidget(DelayController &controller, QWidge
 	layout->setContentsMargins(0, 4, 0, 0);
 	imageLabel_ = new QLabel(this);
 	imageLabel_->setAlignment(Qt::AlignCenter);
-	imageLabel_->setMinimumSize(PreviewCapture::Width, PreviewCapture::Height);
+	// Панель может быть уже 320 точек: картинка ужимается с сохранением пропорций.
+	imageLabel_->setMinimumSize(PreviewCapture::Width * 3 / 5, PreviewCapture::Height * 3 / 4);
+	imageLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+	imageLabel_->setWordWrap(true);
 	imageLabel_->setStyleSheet(QStringLiteral("background: #111; border: 1px solid palette(mid);"));
-	imageLabel_->setText(tr("Preview is off"));
-	captionLabel_ = new QLabel(tr("Approximate packets sent by OBS; CDN/player latency is not included."), this);
+	imageLabel_->setText(text("Preview.Off"));
+	captionLabel_ = new QLabel(text("Preview.Caption"), this);
 	captionLabel_->setWordWrap(true);
-	captionLabel_->setStyleSheet(QStringLiteral("color: palette(mid); font-size: 11px;"));
+	captionLabel_->setStyleSheet(QStringLiteral("font-size: 11px;"));
 	layout->addWidget(imageLabel_);
 	layout->addWidget(captionLabel_);
 
@@ -56,7 +60,7 @@ bool AudiencePreviewWidget::start_capture()
 {
 	if (capture_.start())
 		return true;
-	imageLabel_->setText(tr("OBS video is not ready"));
+	imageLabel_->setText(text("Preview.NotReady"));
 	return false;
 }
 
@@ -71,7 +75,7 @@ void AudiencePreviewWidget::set_enabled(const bool enabled)
 		capture_.stop();
 		lastPresentedKey_ = 0;
 		imageLabel_->setPixmap({});
-		imageLabel_->setText(tr("Preview is off"));
+		imageLabel_->setText(text("Preview.Off"));
 	}
 }
 
@@ -129,7 +133,7 @@ void AudiencePreviewWidget::present_frame()
 	if (emittingHold) {
 		lastPresentedKey_ = 0;
 		imageLabel_->setPixmap({});
-		imageLabel_->setText(tr("Audience is seeing the selected hold scene"));
+		imageLabel_->setText(text("Preview.Hold"));
 		return;
 	}
 
@@ -146,16 +150,16 @@ void AudiencePreviewWidget::present_frame()
 		lastPresentedKey_ = 0;
 		imageLabel_->setPixmap({});
 		if (paused) {
-			imageLabel_->setText(tr("Recording is paused; preview history resumes with recording."));
+			imageLabel_->setText(text("Preview.RecordingPaused"));
 		} else if (emittingDelayed) {
 			const uint64_t startedAt = capture_.started_at_ns();
 			const uint64_t elapsed = startedAt != 0 && now > startedAt ? now - startedAt : 0;
 			const uint64_t requiredNs = core::preview_delay_ns(effectiveSeconds);
 			const auto remaining = static_cast<uint32_t>((requiredNs > elapsed ? requiredNs - elapsed : 0) /
 								     1'000'000'000ULL);
-			imageLabel_->setText(tr("Building accurate preview history… %1 s").arg(remaining));
+			imageLabel_->setText(text("Preview.Building").arg(remaining));
 		} else {
-			imageLabel_->setText(tr("Collecting preview frames…"));
+			imageLabel_->setText(text("Preview.Collecting"));
 		}
 		return;
 	}

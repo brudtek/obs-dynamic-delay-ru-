@@ -34,8 +34,8 @@ if(ENABLE_FRONTEND_API)
 endif()
 
 if(ENABLE_QT)
-  find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
+  find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
   target_compile_options(
     ${CMAKE_PROJECT_NAME}
     PRIVATE
@@ -52,9 +52,6 @@ endif()
 
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_20)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-
-include(multistream-dependencies)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE dynamic-delay-network)
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
@@ -76,12 +73,6 @@ target_sources(
     src/hold-pipeline.cpp
     src/hold-pipeline.hpp
     src/obs-packet.hpp
-    src/multistream-controller.cpp
-    src/multistream-controller.hpp
-    src/multistream-dock.cpp
-    src/multistream-dock.hpp
-    src/multistream-encoders.cpp
-    src/multistream-encoders.hpp
     src/output-session.cpp
     src/output-session.hpp
     src/plugin-main.cpp
@@ -112,27 +103,6 @@ endif()
 if(ENABLE_OBS_INTEGRATION_TESTS)
   enable_testing()
   find_package(Qt6 REQUIRED COMPONENTS Gui)
-  add_executable(multistream_network_tests tests/multistream_network_tests.cpp src/multistream-transport.cpp)
-  target_compile_features(multistream_network_tests PRIVATE cxx_std_20)
-  target_compile_definitions(multistream_network_tests PRIVATE DYNAMIC_DELAY_TRANSPORT_TESTING)
-  target_include_directories(multistream_network_tests PRIVATE src vendor)
-  target_include_directories(multistream_network_tests SYSTEM PRIVATE "${DELAY_AV_INCLUDE_DIR}")
-  target_link_libraries(
-    multistream_network_tests
-    PRIVATE
-      dynamic-delay-rtmp
-      Qt6::Core
-      Qt6::Network
-      "${DELAY_avformat_LIBRARY}"
-      "${DELAY_avcodec_LIBRARY}"
-      "${DELAY_avutil_LIBRARY}"
-  )
-  set(MULTISTREAM_TEST_QT_PLUGINS "" CACHE PATH "Qt TLS plugins for isolated loopback integration tests")
-  add_test(NAME multistream_network_tests COMMAND multistream_network_tests "${MULTISTREAM_TEST_QT_PLUGINS}")
-  set_tests_properties(multistream_network_tests PROPERTIES TIMEOUT 25)
-  if(APPLE AND OBS_LOCAL_APP_SDK)
-    target_link_options(multistream_network_tests PRIVATE "LINKER:-rpath,${OBS_APP}/Contents/Frameworks")
-  endif()
   add_executable(preview_gpu_integration tests/preview_gpu_integration.cpp src/preview-capture.cpp)
   target_compile_features(preview_gpu_integration PRIVATE cxx_std_20)
   target_include_directories(preview_gpu_integration PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}")
@@ -161,34 +131,5 @@ if(ENABLE_OBS_INTEGRATION_TESTS)
   )
   if(APPLE AND OBS_LOCAL_APP_SDK)
     target_link_options(output_session_integration PRIVATE "LINKER:-rpath,${OBS_APP}/Contents/Frameworks")
-  endif()
-  add_executable(
-    multistream_integration
-    tests/multistream_integration.cpp
-    src/multistream-controller.cpp
-    src/multistream-controller.hpp
-    src/delay-controller.cpp
-    src/delay-controller.hpp
-    src/audio-preflight.cpp
-    src/delay-types.cpp
-    src/multistream-encoders.cpp
-    src/output-session.cpp
-    src/hold-pipeline.cpp
-    src/hold-media-hub.cpp
-    src/hold-audio-tap.cpp
-  )
-  target_compile_features(multistream_integration PRIVATE cxx_std_20)
-  target_include_directories(
-    multistream_integration
-    PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}" $<TARGET_PROPERTY:OBS::obs-frontend-api,INTERFACE_INCLUDE_DIRECTORIES>
-  )
-  set_target_properties(multistream_integration PROPERTIES AUTOMOC ON)
-  target_link_libraries(multistream_integration PRIVATE OBS::libobs Qt6::Widgets plugin-support dynamic-delay-network)
-  target_compile_options(
-    multistream_integration
-    PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang,GNU>:-Wno-deprecated-declarations>
-  )
-  if(APPLE AND OBS_LOCAL_APP_SDK)
-    target_link_options(multistream_integration PRIVATE "LINKER:-rpath,${OBS_APP}/Contents/Frameworks")
   endif()
 endif()

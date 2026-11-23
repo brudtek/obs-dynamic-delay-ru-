@@ -122,6 +122,17 @@ int state_rank(const DelayState state)
 	return 0;
 }
 
+// Подпись выхода OBS для сообщений в панели. Внутренние метки
+// «Streaming» и «Recording» остаются ключами для выбора предпросмотра.
+std::string output_display_name(const std::string &label)
+{
+	if (label == "Streaming")
+		return "Трансляция";
+	if (label == "Recording")
+		return "Запись";
+	return label;
+}
+
 void ensure_config_directory()
 {
 	char *directory = obs_module_config_path("");
@@ -167,7 +178,6 @@ void DelayController::shutdown()
 	if (shutdownComplete_.exchange(true, std::memory_order_acq_rel))
 		return;
 	shuttingDown_.store(true, std::memory_order_release);
-	emit about_to_shutdown();
 	pollTimer_.stop();
 	obs_frontend_remove_event_callback(&DelayController::frontend_event, this);
 	signal_handler_t *coreSignals = obs_get_signal_handler();
@@ -232,9 +242,9 @@ DelaySnapshot DelayController::snapshot() const
 			aggregate.detail = !controllerError_.empty() ? controllerError_ : outputErrors_.begin()->second;
 		} else if (requestedActive_) {
 			aggregate.state = DelayState::Preparing;
-			aggregate.detail = "Armed — start streaming or recording";
+			aggregate.detail = "Запустите трансляцию или запись — задержка включится сама";
 		} else {
-			aggregate.detail = "Live";
+			aggregate.detail = "Без задержки";
 		}
 		return aggregate;
 	}
@@ -255,7 +265,7 @@ DelaySnapshot DelayController::snapshot() const
 		progressTotal += current.progress;
 		if (state_rank(current.state) > state_rank(aggregate.state)) {
 			aggregate.state = current.state;
-			aggregate.detail = session->label() + ": " + current.detail;
+			aggregate.detail = output_display_name(session->label()) + ": " + current.detail;
 		}
 	}
 	const auto audience = core::preview_output(aggregate.outputTimings.begin(), aggregate.outputTimings.end());
@@ -267,7 +277,7 @@ DelaySnapshot DelayController::snapshot() const
 	}
 	aggregate.progress = progressTotal / static_cast<double>(sessions_.size());
 	if (aggregate.detail.empty())
-		aggregate.detail = aggregate.state == DelayState::Delayed ? "Delay active" : "Live";
+		aggregate.detail = aggregate.state == DelayState::Delayed ? "Задержка работает" : "Без задержки";
 	if (!controllerError_.empty() || !outputErrors_.empty()) {
 		aggregate.state = DelayState::Error;
 		aggregate.detail = !controllerError_.empty() ? controllerError_ : outputErrors_.begin()->second;
@@ -428,41 +438,11 @@ void DelayController::add_output(obs_output_t *output, const std::string &label)
 	std::string error;
 	if (!session->attach(error)) {
 		obs_log(LOG_WARNING, "%s output not attached: %s", label.c_str(), error.c_str());
-		outputErrors_[label] = label + ": " + error;
+		outputErrors_[label] = output_display_name(label) + ": " + error;
 		return;
 	}
 	outputErrors_.erase(label);
 	sessions_.emplace(output, std::move(session));
-}
-
-bool DelayController::add_managed_output(obs_output_t *output, std::string &error)
-{
-	if (shuttingDown_ || !output) {
-		error = "Dynamic Delay is shutting down.";
-		return false;
-	}
-	add_output(output, "Multistream");
-	std::scoped_lock lock(mutex_);
-	if (!sessions_.contains(output)) {
-		error = outputErrors_["Multistream"];
-		return false;
-	}
-	return true;
-}
-
-void DelayController::managed_output_started(obs_output_t *output)
-{
-	refresh_audio_preflight();
-	start_delay_on_output(output);
-	mark_dirty();
-}
-
-void DelayController::remove_managed_output(obs_output_t *output)
-{
-	remove_output(output, "Multistream");
-	if (!shuttingDown_)
-		refresh_audio_preflight();
-	mark_dirty();
 }
 
 void DelayController::remove_output(obs_output_t *output, const std::string &label)
@@ -493,7 +473,7 @@ void DelayController::start_delay_on_output(obs_output_t *output)
 	obs_source_t *scene = selected_scene();
 	if (!scene) {
 		std::scoped_lock lock(mutex_);
-		controllerError_ = "Select a valid hold scene before adding delay.";
+		controllerError_ = "Перед включением задержки выберите сцену ожидания.";
 		requestedActive_ = false;
 		mark_dirty();
 		return;
@@ -652,7 +632,7 @@ std::shared_ptr<HoldMediaHub> DelayController::create_media_hub(obs_source_t *sc
 	}
 	if (scheduledRearm) {
 		publishDiagnostic(diagnostic);
-		error = "Hold audio safety conditions changed; rebuilding the shared hold graph.";
+		error = "Изменились условия звука сцены ожидания — она перезапускается.";
 		obs_log(LOG_WARNING, "%s", error.c_str());
 		obs_source_release(dedicatedSource);
 		mark_dirty();
@@ -685,7 +665,7 @@ std::shared_ptr<HoldMediaHub> DelayController::create_media_hub(obs_source_t *sc
 	obs_source_release(dedicatedSource);
 	if (!mediaHub) {
 		publishDiagnostic(diagnostic);
-		error = backendError.empty() ? "Could not initialize the hold media graph." : backendError;
+		error = backendError.empty() ? "Не удалось подготовить сцену ожидания." : backendError;
 		return {};
 	}
 	publishDiagnostic(diagnostic);
@@ -717,7 +697,7 @@ void DelayController::start_delay_on_sessions()
 		{
 			std::scoped_lock lock(mutex_);
 			requestedActive_ = false;
-			controllerError_ = "Select a valid hold scene before adding delay.";
+			controllerError_ = "Перед включением задержки выберите сцену ожидания.";
 		}
 		mark_dirty();
 		return;
@@ -1191,10 +1171,10 @@ void DelayController::refresh_audio_preflight()
 
 	QString publishedMessage = QString::fromStdString(result.message);
 	if (mutedNow) {
-		publishedMessage += QStringLiteral(" The current activation was muted to preserve video delay.");
+		publishedMessage += QString::fromUtf8(" Звук текущего включения заглушён, чтобы не сбить задержку видео.");
 	} else if (stickyBackend) {
-		publishedMessage += QStringLiteral(
-			" The current activation keeps its existing safe audio backend until delay is reactivated.");
+		publishedMessage += QString::fromUtf8(
+			" До повторного включения задержки звук остаётся в прежнем безопасном режиме.");
 	}
 
 	obs_source_release(dedicatedSource);

@@ -107,12 +107,12 @@ bool OutputSession::supported(std::string &error) const
 {
 	const uint32_t flags = obs_output_get_flags(output_);
 	if ((flags & OBS_OUTPUT_ENCODED) == 0 || (flags & OBS_OUTPUT_AV) != OBS_OUTPUT_AV) {
-		error = "The output must be an encoded audio/video output.";
+		error = "Выход должен передавать закодированные видео и звук.";
 		return false;
 	}
 	const std::size_t videoEncoders = video_encoder_count(output_);
 	if (videoEncoders == 0) {
-		error = "The output has no video encoder.";
+		error = "У выхода нет видеокодировщика.";
 		return false;
 	}
 	// Hybrid MP4/MOV advertises OBS_OUTPUT_MULTI_TRACK_VIDEO as a capability
@@ -120,18 +120,18 @@ bool OutputSession::supported(std::string &error) const
 	// not the output type's capability flag, so those default OBS 32 formats
 	// remain usable while real multi-video/Enhanced Broadcasting stays blocked.
 	if (videoEncoders != 1 || !obs_output_get_video_encoder2(output_, 0)) {
-		error = "Multiple video tracks (including Enhanced Broadcasting) are not supported safely.";
+		error = "Несколько видеодорожек (в том числе Enhanced Broadcasting) не поддерживаются.";
 		return false;
 	}
 	bool hasAudio = false;
 	for (std::size_t index = 0; index < MAX_OUTPUT_AUDIO_ENCODERS; ++index)
 		hasAudio = hasAudio || obs_output_get_audio_encoder(output_, index) != nullptr;
 	if (!hasAudio) {
-		error = "The packet callback requires at least one audio encoder.";
+		error = "Нужен хотя бы один аудиокодировщик.";
 		return false;
 	}
 	if (obs_output_get_active_delay(output_) != 0) {
-		error = "Disable OBS's native Stream Delay before using Dynamic Delay.";
+		error = "Отключите встроенную задержку трансляции OBS: Настройки → Расширенные → Задержка трансляции.";
 		return false;
 	}
 	return true;
@@ -172,11 +172,11 @@ bool OutputSession::attach(std::string &error)
 bool OutputSession::request_delay(const uint32_t seconds, std::shared_ptr<HoldMediaHub> mediaHub, std::string &error)
 {
 	if (!mediaHub) {
-		error = "The shared hold media graph is not available.";
+		error = "Сцена ожидания недоступна.";
 		return false;
 	}
 	if (seconds == 0 || seconds > 300) {
-		error = "Delay must be between 1 and 300 seconds.";
+		error = "Задержка должна быть от 1 до 300 секунд.";
 		return false;
 	}
 	if (!supported(error))
@@ -190,7 +190,7 @@ bool OutputSession::request_delay(const uint32_t seconds, std::shared_ptr<HoldMe
 		std::scoped_lock lock(mutex_);
 		const DelayState current = state_.load(std::memory_order_relaxed);
 		if (current != DelayState::Bypass && current != DelayState::Error) {
-			error = "This output is already changing delay state.";
+			error = "Выход уже переключает задержку.";
 			return false;
 		}
 		retiredPipeline = std::move(holdPipeline_);
@@ -201,7 +201,7 @@ bool OutputSession::request_delay(const uint32_t seconds, std::shared_ptr<HoldMe
 		std::scoped_lock lock(mutex_);
 		const DelayState current = state_.load(std::memory_order_relaxed);
 		if (current != DelayState::Bypass && current != DelayState::Error) {
-			error = "This output is already changing delay state.";
+			error = "Выход уже переключает задержку.";
 			return false;
 		}
 		targetSeconds_ = seconds;
@@ -228,7 +228,7 @@ bool OutputSession::request_delay(const uint32_t seconds, std::shared_ptr<HoldMe
 			if (obs_output_get_audio_encoder(output_, index))
 				activeAudioMask_ |= 1U << index;
 		}
-		detail_ = "Preparing the hold encoder";
+		detail_ = "Запускается кодировщик сцены ожидания";
 		clear_primary_buffer();
 		clear_hold_buffer();
 		state_.store(DelayState::Preparing, std::memory_order_release);
@@ -263,7 +263,7 @@ void OutputSession::request_bypass()
 		return;
 	if (current == DelayState::Preparing || current == DelayState::Error) {
 		state_.store(DelayState::Bypass, std::memory_order_release);
-		detail_ = "Live";
+		detail_ = "Без задержки";
 		errorReturnPending_ = false;
 		pendingErrorDetail_.clear();
 		clear_primary_buffer();
@@ -273,7 +273,7 @@ void OutputSession::request_bypass()
 		returnFromFilling_ = current == DelayState::Filling;
 		drainPrimaryOnReturn_ = false;
 		state_.store(DelayState::ReturningLive, std::memory_order_release);
-		detail_ = "Waiting for the next live keyframe";
+		detail_ = "Ожидание ключевого кадра прямого эфира";
 	}
 	obs_log(LOG_INFO, "%s: delay removal requested (%s)", label_.c_str(),
 		state_.load(std::memory_order_relaxed) == DelayState::Bypass ? "live" : "awaiting keyframe");
@@ -360,7 +360,7 @@ void OutputSession::activate_signal(void *param, calldata_t *)
 		self->cleanupHoldRequested_ = true;
 		self->errorReturnPending_ = false;
 		self->pendingErrorDetail_.clear();
-		self->detail_ = "Live after reconnection";
+		self->detail_ = "Прямой эфир после переподключения";
 	}
 	self->reconnectRearmRequested_.store(true, std::memory_order_release);
 	if (self->notify_)
@@ -807,7 +807,7 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 		fillStartNs_ = nowNs;
 		fillStartDtsUsec_ = rawDtsUsec;
 		state_.store(DelayState::Filling, std::memory_order_release);
-		detail_ = "Building the delayed buffer";
+		detail_ = "Зрители видят сцену ожидания, буфер накапливается";
 		obs_log(LOG_INFO, "%s: hold stream active; filling delayed buffer", label_.c_str());
 		current = DelayState::Filling;
 		startingHoldEpoch = true;
@@ -819,7 +819,7 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 		const bool completedWithError = errorReturnPending_;
 		state_.store(completedWithError ? DelayState::Error : DelayState::Bypass, std::memory_order_release);
 		if (!completedWithError)
-			detail_ = "Live";
+			detail_ = "Без задержки";
 		else
 			detail_ = std::move(pendingErrorDetail_) + " Live fallback active.";
 		errorReturnPending_ = false;
@@ -839,11 +839,11 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 		if (!buffer_primary(packet, captureNs, rawDtsUsec)) {
 			returnFromFilling_ = true;
 			state_.store(DelayState::ReturningLive, std::memory_order_release);
-			detail_ = "RAM safety limit reached — waiting for a live keyframe";
+			detail_ = "Достигнут предел памяти — ожидание ключевого кадра прямого эфира";
 			if (startingHoldEpoch && !holdQueues_[0].empty())
 				begin_timeline_epoch_locked(*packet, &holdQueues_[0].front());
 			if (!replace_from(holdQueues_, &holdFallbackPackets_, packet, true))
-				return_live_with_error_locked("RAM safety limit reached and the hold stream underrun.",
+				return_live_with_error_locked("Достигнут предел памяти, а поток сцены ожидания прервался.",
 							      true);
 			finishPacket();
 			if (notify_)
@@ -858,7 +858,7 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 		if (durationReady && packet->type == OBS_ENCODER_VIDEO && firstBufferedVideoIsKeyframe) {
 			begin_timeline_epoch_locked(*packet, &primaryQueues_[0].front());
 			state_.store(DelayState::Delayed, std::memory_order_release);
-			detail_ = "Delay active";
+			detail_ = "Задержка работает";
 			obs_log(LOG_INFO, "%s: %u second delay active", label_.c_str(), targetSeconds_);
 			cleanupHoldRequested_ = true;
 			current = DelayState::Delayed;
@@ -868,7 +868,7 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 				const bool keptHold = replace_with_fallback(holdFallbackPackets_, packet);
 				if (keptHold && packet->type == OBS_ENCODER_VIDEO)
 					begin_timeline_epoch_locked(*packet, nullptr);
-				return_live_with_error_locked("The delayed keyframe could not be emitted safely.",
+				return_live_with_error_locked("Не удалось безопасно отправить задержанный ключевой кадр.",
 							      keptHold);
 				notify = true;
 			}
@@ -877,13 +877,13 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 			if (startingHoldEpoch && !holdQueues_[0].empty())
 				begin_timeline_epoch_locked(*packet, &holdQueues_[0].front());
 			if (!replace_from(holdQueues_, &holdFallbackPackets_, packet, true, &usedFallback)) {
-				return_live_with_error_locked("Hold encoder underrun without a safe fallback packet.",
+				return_live_with_error_locked("Кодировщик сцены ожидания не успел, запасного пакета нет.",
 							      true);
 				notify = true;
 			} else if (usedFallback) {
 				if (packet->type == OBS_ENCODER_VIDEO)
 					begin_timeline_epoch_locked(*packet, nullptr);
-				return_live_with_error_locked("Hold encoder underrun.", true);
+				return_live_with_error_locked("Кодировщик сцены ожидания не успел.", true);
 				notify = true;
 			}
 		}
@@ -892,7 +892,7 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 			returnFromFilling_ = false;
 			drainPrimaryOnReturn_ = true;
 			state_.store(DelayState::ReturningLive, std::memory_order_release);
-			detail_ = "RAM safety limit reached — waiting for a live keyframe";
+			detail_ = "Достигнут предел памяти — ожидание ключевого кадра прямого эфира";
 			if (packet->type == OBS_ENCODER_VIDEO && packet->keyframe) {
 				begin_timeline_epoch_locked(*packet, nullptr);
 				state_.store(DelayState::Bypass, std::memory_order_release);
@@ -905,7 +905,7 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 					if (usedFallback && packet->type == OBS_ENCODER_VIDEO)
 						begin_timeline_epoch_locked(*packet, nullptr);
 					return_live_with_error_locked(
-						"RAM limit reached and the delayed queue could not be drained safely.",
+						"Достигнут предел памяти, очередь задержки не удалось безопасно освободить.",
 						false);
 				}
 			}
@@ -917,12 +917,12 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 		realign_primary_locked(packet, rawDtsUsec);
 		bool usedFallback = false;
 		if (!replace_from(primaryQueues_, &primaryFallbackPackets_, packet, false, &usedFallback)) {
-			return_live_with_error_locked("Delay buffer underrun; returning to live safely.", false);
+			return_live_with_error_locked("Буфер задержки опустел — безопасный возврат в прямой эфир.", false);
 			notify = true;
 		} else if (usedFallback) {
 			if (packet->type == OBS_ENCODER_VIDEO)
 				begin_timeline_epoch_locked(*packet, nullptr);
-			return_live_with_error_locked("Delay buffer underrun; returning to live safely.", false);
+			return_live_with_error_locked("Буфер задержки опустел — безопасный возврат в прямой эфир.", false);
 			notify = true;
 		}
 	} else if (current == DelayState::ReturningLive) {
@@ -934,20 +934,20 @@ void OutputSession::process_primary_packet(encoder_packet *packet, const encoder
 					label_.c_str());
 		} else if (returnFromFilling_) {
 			if (!replace_from(holdQueues_, &holdFallbackPackets_, packet, true))
-				return_live_with_error_locked("Hold encoder underrun while cancelling.", true);
+				return_live_with_error_locked("Кодировщик сцены ожидания не успел при отмене.", true);
 		} else {
 			if (!drainPrimaryOnReturn_ && !buffer_primary(packet, captureNs, rawDtsUsec)) {
 				drainPrimaryOnReturn_ = true;
-				detail_ = "RAM safety limit reached — draining until a live keyframe";
+				detail_ = "Достигнут предел памяти — буфер освобождается до ключевого кадра";
 				notify = true;
 			}
 			bool usedFallback = false;
 			if (!replace_from(primaryQueues_, &primaryFallbackPackets_, packet, false, &usedFallback)) {
-				return_live_with_error_locked("Delay buffer underrun while returning live.", false);
+				return_live_with_error_locked("Буфер задержки опустел при возврате в прямой эфир.", false);
 			} else if (usedFallback) {
 				if (packet->type == OBS_ENCODER_VIDEO)
 					begin_timeline_epoch_locked(*packet, nullptr);
-				return_live_with_error_locked("Delay buffer underrun while returning live.", false);
+				return_live_with_error_locked("Буфер задержки опустел при возврате в прямой эфир.", false);
 			}
 		}
 	}
@@ -994,11 +994,11 @@ void OutputSession::receive_hold_packet(encoder_packet *packet)
 		holdFallbackPackets_[lane] = ObsPacket(packet, nowNs);
 	if (packet->size > MaxHoldBufferBytes - std::min(holdBufferedBytes_, MaxHoldBufferBytes)) {
 		if (current == DelayState::Preparing) {
-			set_error_locked("The hold encoder exceeded its 128 MiB preroll safety limit.");
+			set_error_locked("Кодировщик сцены ожидания превысил предел 128 МБ.");
 		} else {
 			returnFromFilling_ = true;
 			state_.store(DelayState::ReturningLive, std::memory_order_release);
-			detail_ = "Hold encoder backlog limit reached — waiting for a live keyframe";
+			detail_ = "Кодировщик сцены ожидания перегружен — ожидание ключевого кадра";
 			cleanupHoldRequested_ = true;
 		}
 		if (notify_)
@@ -1010,7 +1010,7 @@ void OutputSession::receive_hold_packet(encoder_packet *packet)
 	if (current == DelayState::Preparing) {
 		bool formatsComplete = false;
 		if (!hold_formats_compatible_locked(formatsComplete) && formatsComplete) {
-			set_error_locked("The hold encoder packet timebase or track layout is incompatible.");
+			set_error_locked("Формат пакетов сцены ожидания несовместим с выходом.");
 			if (notify_)
 				notify_();
 			return;
@@ -1019,16 +1019,16 @@ void OutputSession::receive_hold_packet(encoder_packet *packet)
 	if (current == DelayState::Preparing && packet->type == OBS_ENCODER_VIDEO && packet->keyframe && !holdReady_) {
 		std::string error;
 		if (!holdPipeline_ || !holdPipeline_->compatible_with_primary(error)) {
-			set_error_locked(error.empty() ? "Hold encoder is not bitstream-compatible." : error);
+			set_error_locked(error.empty() ? "Кодировщик сцены ожидания несовместим с основным." : error);
 			cleanupHoldRequested_ = true;
 		} else {
 			holdReady_ = true;
-			detail_ = "Prerolling hold audio";
+			detail_ = "Подготовка звука сцены ожидания";
 		}
 		notify = true;
 	}
 	if (current == DelayState::Preparing && hold_preroll_ready_locked())
-		detail_ = "Waiting for a live keyframe";
+		detail_ = "Ожидание ключевого кадра прямого эфира";
 
 	// Do not let preroll grow without bound while waiting for a main keyframe.
 	while (current == DelayState::Preparing && lane != 0 && holdQueues_[lane].size() > MaxHoldLanePackets) {

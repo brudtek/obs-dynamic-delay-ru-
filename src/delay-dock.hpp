@@ -5,6 +5,7 @@
 #include <QWidget>
 
 class QComboBox;
+class QFormLayout;
 class QLabel;
 class QProgressBar;
 class QPushButton;
@@ -24,6 +25,10 @@ public:
 	explicit DelayDock(DelayController &controller, QWidget *parent = nullptr);
 	~DelayDock() override;
 
+protected:
+	void resizeEvent(QResizeEvent *event) override;
+	void changeEvent(QEvent *event) override;
+
 private slots:
 	void apply_snapshot(const dynamic_delay::DelaySnapshot &snapshot);
 	void apply_settings(const dynamic_delay::DelaySettings &settings);
@@ -36,6 +41,9 @@ private:
 	static QString state_text(DelayState state);
 	void build_ui();
 	void update_audio_controls();
+	void update_form_wrapping();
+	void update_secondary_colors();
+	void update_minimum_width();
 
 	DelayController &controller_;
 	QLabel *statusDot_ = nullptr;
@@ -57,6 +65,9 @@ private:
 	QProgressBar *progress_ = nullptr;
 	QToolButton *previewToggle_ = nullptr;
 	AudiencePreviewWidget *preview_ = nullptr;
+	QWidget *content_ = nullptr;
+	QFormLayout *holdForm_ = nullptr;
+	QFormLayout *audioForm_ = nullptr;
 	bool applying_ = false;
 	bool configurationEnabled_ = true;
 	int lastStatusColor_ = -1;
