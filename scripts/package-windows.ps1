@@ -35,7 +35,73 @@ $plugin = @(
 foreach ($license in Get-ChildItem (Join-Path $root 'data\licenses') -File) {
 	$plugin += , @($license.FullName, "obs-dynamic-delay/data/licenses/$($license.Name)")
 }
-New-Zip (Join-Path $release "obs-dynamic-delay-$version-ru-windows-x64.zip") $plugin
+
+# Установщик с подставленной версией: в архив (рядом с папкой плагина) и в setup.exe.
+$stage = Join-Path $release 'setup-stage'
+if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+New-Item -ItemType Directory -Force $stage | Out-Null
+$installerText = [IO.File]::ReadAllText((Join-Path $root 'scripts\installer\installer.ps1')).Replace('@VERSION@', $version)
+[IO.File]::WriteAllText((Join-Path $stage 'installer.ps1'), $installerText, (New-Object Text.UTF8Encoding $true))
+
+$zipEntries = $plugin + @(
+	, @((Join-Path $stage 'installer.ps1'), 'installer.ps1')
+	, @((Join-Path $root 'scripts\installer\Установить.cmd'), 'Установить.cmd')
+	, @((Join-Path $root 'scripts\installer\Удалить.cmd'), 'Удалить.cmd')
+)
+New-Zip (Join-Path $release "obs-dynamic-delay-$version-ru-windows-x64.zip") $zipEntries
+
+# Однофайловый setup.exe: IExpress (входит в Windows) распаковывает installer.ps1
+# и payload.zip во временную папку и запускает установщик.
+New-Zip (Join-Path $stage 'payload.zip') $plugin
+$setup = Join-Path $release "obs-dynamic-delay-$version-ru-setup.exe"
+if (Test-Path $setup) { Remove-Item -Force $setup }
+$sed = @"
+[Version]
+Class=IEXPRESS
+SEDVersion=3
+[Options]
+PackagePurpose=InstallApp
+ShowInstallProgramWindow=1
+HideExtractAnimation=1
+UseLongFileName=1
+InsideCompressed=0
+CAB_FixedSize=0
+CAB_ResvCodeSigning=0
+RebootMode=N
+InstallPrompt=%InstallPrompt%
+DisplayLicense=%DisplayLicense%
+FinishMessage=%FinishMessage%
+TargetName=%TargetName%
+FriendlyName=%FriendlyName%
+AppLaunched=%AppLaunched%
+PostInstallCmd=%PostInstallCmd%
+AdminQuietInstCmd=%AdminQuietInstCmd%
+UserQuietInstCmd=%UserQuietInstCmd%
+SourceFiles=SourceFiles
+[Strings]
+InstallPrompt=
+DisplayLicense=
+FinishMessage=
+TargetName=$setup
+FriendlyName=OBS Dynamic Delay RU $version
+AppLaunched=powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File installer.ps1
+PostInstallCmd=<None>
+AdminQuietInstCmd=
+UserQuietInstCmd=
+FILE0="installer.ps1"
+FILE1="payload.zip"
+[SourceFiles]
+SourceFiles0=$stage\
+[SourceFiles0]
+%FILE0%=
+%FILE1%=
+"@
+$sedPath = Join-Path $stage 'setup.sed'
+Set-Content -Path $sedPath -Value $sed -Encoding Default
+# IExpress не открывает файл описания по полному пути в кавычках — только по имени из рабочей папки.
+$iexpress = Start-Process -FilePath "$env:SystemRoot\System32\iexpress.exe" -ArgumentList '/N', '/Q', 'setup.sed' -WorkingDirectory $stage -Wait -PassThru
+if (-not (Test-Path $setup)) { throw "IExpress не создал $setup (код $($iexpress.ExitCode))." }
+Remove-Item -Recurse -Force $stage
 
 if (Test-Path $pdb) {
 	New-Zip (Join-Path $release "obs-dynamic-delay-$version-ru-windows-x64-symbols.zip") @(, @($pdb, 'obs-dynamic-delay.pdb'))
@@ -49,7 +115,7 @@ $source = @()
 foreach ($file in $files) { $source += , @((Join-Path $root $file), "obs-dynamic-delay-$version-ru/$file") }
 New-Zip (Join-Path $release "obs-dynamic-delay-$version-ru-source.zip") $source
 
-Get-ChildItem $release -Filter '*.zip' | ForEach-Object {
+Get-ChildItem $release -File | Where-Object { $_.Extension -in '.zip', '.exe' } | ForEach-Object {
 	'{0}  {1}' -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
 } | Set-Content -Encoding ascii (Join-Path $release 'SHA256SUMS.txt')
 Get-Content (Join-Path $release 'SHA256SUMS.txt')
