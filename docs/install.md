@@ -4,7 +4,7 @@
 
 ## Установка установщиком (проще всего)
 
-1. Скачайте `obs-dynamic-delay-1.2.1-ru-setup.exe` со страницы
+1. Скачайте `obs-dynamic-delay-1.2.2-ru-setup.exe` со страницы
    [выпусков](https://github.com/brudtek/obs-dynamic-delay-ru-/releases/latest)
    и запустите.
    - Windows может показать «Система Windows защитила ваш компьютер»: файл не
@@ -22,13 +22,13 @@
 автоматически, в каком бы из стандартных мест она ни лежала. Повторный запуск
 обновляет плагин, настройки сохраняются.
 
-Вместо setup.exe можно распаковать архив `obs-dynamic-delay-1.2.1-ru-windows-x64.zip`
+Вместо setup.exe можно распаковать архив `obs-dynamic-delay-1.2.2-ru-windows-x64.zip`
 в любую папку и дважды щёлкнуть `Установить.cmd` — результат тот же.
 
 ## Установка вручную
 
 1. Закройте OBS.
-2. Распакуйте из архива `obs-dynamic-delay-1.2.1-ru-windows-x64.zip` папку
+2. Распакуйте из архива `obs-dynamic-delay-1.2.2-ru-windows-x64.zip` папку
    `obs-dynamic-delay` целиком в
    `C:\ProgramData\obs-studio\plugins\`
    (если папок `obs-studio\plugins` нет — создайте; папка `ProgramData`

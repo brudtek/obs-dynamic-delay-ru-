@@ -422,42 +422,17 @@ AudioPreflightResult preflight_hold_audio(const DelaySettings &settings, obs_sou
 						     "Сцена ожидания недоступна — будет тишина.");
 		}
 
+		// The hold tap mixes every visible audio source of the scene itself,
+		// once, from its own buffer, so sources shared with other scenes or
+		// with Program are fine and never need a fallback.
 		const AudioTree holdTree = collect_audio_tree(holdScene);
-		collect_scene_mix_conflicts(holdScene, holdTree, result.conflictNames);
-		if (result.conflictNames.empty()) {
-			result.message =
-				holdTree.leaves.empty()
-					? "В сцене ожидания нет источников звука — будет тишина."
-					: "Звук сцены ожидания нигде больше не используется и будет взят из самой сцены.";
+		if (holdTree.leaves.empty()) {
+			result.message = "В сцене ожидания нет источников звука — будет тишина.";
 			return result;
 		}
-
-		const std::string names = format_names(result.conflictNames);
-		std::vector<std::string> dedicatedConflicts;
-		if (dedicated_source_is_exclusive(holdScene, dedicatedSource, dedicatedConflicts)) {
-			result.effectiveMode = HoldAudioMode::DedicatedSource;
-			result.degraded = true;
-			result.message = "Источники звука сцены ожидания используются и в других местах, включая скрытые "
-					 "элементы сцен (" +
-					 names + ") — используется отдельный источник звука.";
-			return result;
-		}
-		if (!dedicatedConflicts.empty()) {
-			for (const std::string &name : dedicatedConflicts)
-				append_unique(result.conflictNames, name);
-			normalize_names(result.conflictNames);
-			return make_silence_fallback(settings.holdAudioMode, mixerIndex,
-						     "Звук сцены ожидания используется и в других местах (" + names +
-							     "), а отдельный источник звучит где-то ещё (" +
-							     format_names(dedicatedConflicts) + ") — будет тишина.",
-						     std::move(result.conflictNames));
-		}
-		return make_silence_fallback(
-			settings.holdAudioMode, mixerIndex,
-			"Источники звука сцены ожидания используются и в других местах, включая скрытые "
-			"элементы сцен (" +
-				names + "). Отдельный источник не выбран — будет тишина.",
-			std::move(result.conflictNames));
+		result.message = "Звук берётся из источников сцены ожидания с их громкостью, включая источники, "
+				 "общие с другими сценами.";
+		return result;
 	}
 
 	case HoldAudioMode::DedicatedSource: {

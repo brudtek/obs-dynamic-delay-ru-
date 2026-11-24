@@ -903,6 +903,7 @@ void DelayController::poll()
 	bool shouldRearm = false;
 	std::vector<obs_output_t *> reconnectReady;
 	std::shared_ptr<HoldMediaHub> retiredHub;
+	std::shared_ptr<HoldMediaHub> liveHub;
 	{
 		std::scoped_lock lock(mutex_);
 		for (auto &[_, session] : sessions_) {
@@ -931,8 +932,15 @@ void DelayController::poll()
 		}
 		if (activeMediaHub_ && activeMediaHub_.use_count() == 1)
 			retiredHub = std::move(activeMediaHub_);
+		else
+			liveHub = activeMediaHub_;
 	}
 	retiredHub.reset();
+	// Items shown, hidden, added or removed in the hold scene (or its nested
+	// scenes) are picked up within one tick.
+	if (liveHub)
+		liveHub->refresh_audio_tree();
+	liveHub.reset();
 	if (shouldRearm)
 		start_delay_on_sessions();
 	for (obs_output_t *output : reconnectReady)

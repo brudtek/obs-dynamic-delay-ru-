@@ -47,6 +47,8 @@ public:
 	[[nodiscard]] bool active() const noexcept { return started_; }
 	[[nodiscard]] bool matches(obs_source_t *holdScene, const HoldAudioConfig &config) const noexcept;
 	void set_activation_signature(HoldAudioConfig config) noexcept;
+	// Follows visibility and membership changes of the hold scene's audio sources.
+	void refresh_audio_tree();
 	bool force_audio_silence();
 	// Equal complete primary encoder layouts can share one auxiliary
 	// collector, including its pause state. Partial A/V matches stay isolated.

@@ -54,11 +54,21 @@ bool HoldMediaHub::matches(obs_source_t *holdScene, const HoldAudioConfig &confi
 {
 	if (holdScene_ != holdScene || activationConfig_.mode != config.mode)
 		return false;
+	// A graph muted by an earlier safety fallback is never reused: the next
+	// activation must start with working hold audio, whatever happened before.
+	if (audioSilenced_ && config.mode != HoldAudioMode::Silence)
+		return false;
 	if ((config.mode == HoldAudioMode::SceneMix || config.mode == HoldAudioMode::DedicatedSource) &&
 	    activationConfig_.dedicatedSourceUuid != config.dedicatedSourceUuid)
 		return false;
 	return config.mode != HoldAudioMode::ReservedTrack ||
 	       activationConfig_.reservedMixerIndex == config.reservedMixerIndex;
+}
+
+void HoldMediaHub::refresh_audio_tree()
+{
+	if (started_ && audioTap_)
+		audioTap_->refresh_audio_tree();
 }
 
 void HoldMediaHub::set_activation_signature(HoldAudioConfig config) noexcept
@@ -78,6 +88,7 @@ bool HoldMediaHub::create_view(std::string &error)
 	audioTap_ = std::make_unique<HoldAudioTap>(holdScene_, config_);
 	if (!audioTap_->create(error))
 		return false;
+	audioTap_->refresh_audio_tree();
 	audio_t *mainAudio = obs_get_audio();
 	const std::size_t clockMixer = config_.mode == HoldAudioMode::ReservedTrack ? config_.reservedMixerIndex : 0;
 	if (config_.mode != HoldAudioMode::Silence && !audioTap_->connect_main_clock(mainAudio, clockMixer, error))

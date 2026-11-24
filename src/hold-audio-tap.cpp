@@ -6,11 +6,61 @@
 #include <limits>
 #include <mutex>
 #include <sstream>
+#include <vector>
 
 namespace dynamic_delay {
 namespace {
 
 constexpr const char *AudioTapSourceId = "obs_dynamic_delay_hold_audio_tap";
+constexpr int MaxSceneDepth = 16;
+
+bool contains(const std::vector<obs_source_t *> &list, const obs_source_t *source)
+{
+	return std::find(list.begin(), list.end(), source) != list.end();
+}
+
+bool collect_visible_child(obs_scene_t *, obs_sceneitem_t *item, void *param)
+{
+	if (!obs_sceneitem_visible(item))
+		return true;
+	if (obs_source_t *child = obs_source_get_ref(obs_sceneitem_get_source(item)))
+		static_cast<std::vector<obs_source_t *> *>(param)->push_back(child);
+	return true;
+}
+
+// Every visible audio source under `source`, each once, as new references.
+// Nested scenes and groups are descended into instead of reading their mix,
+// because libobs leaves duplicated sources out of every scene mix.
+void collect_audio_sources(obs_source_t *source, std::vector<obs_source_t *> &leaves,
+			   std::vector<obs_source_t *> &visitedScenes, int depth)
+{
+	if (!source || depth > MaxSceneDepth || obs_source_removed(source))
+		return;
+	if (obs_scene_t *scene = obs_group_or_scene_from_source(source)) {
+		if (contains(visitedScenes, source))
+			return;
+		visitedScenes.push_back(source);
+		// Collect first, descend after: never hold one scene's lock while
+		// enumerating another.
+		std::vector<obs_source_t *> children;
+		obs_scene_enum_items(scene, &collect_visible_child, &children);
+		for (obs_source_t *child : children) {
+			collect_audio_sources(child, leaves, visitedScenes, depth + 1);
+			obs_source_release(child);
+		}
+		return;
+	}
+	if ((obs_source_get_output_flags(source) & OBS_SOURCE_AUDIO) == 0 || contains(leaves, source))
+		return;
+	leaves.push_back(obs_source_get_ref(source));
+}
+
+void release_all(std::vector<obs_source_t *> &sources)
+{
+	for (obs_source_t *source : sources)
+		obs_source_release(source);
+	sources.clear();
+}
 
 } // namespace
 
@@ -22,17 +72,33 @@ struct HoldAudioTap::SharedState {
 		  config(selection),
 		  fifo(selection.mode == HoldAudioMode::Silence ? nullptr : std::make_unique<Fifo>())
 	{
+		if (mixes_scene_sources())
+			mixBuffer.assign(static_cast<std::size_t>(MAX_AUDIO_MIXES) * MAX_AUDIO_CHANNELS *
+						 AUDIO_OUTPUT_FRAMES,
+					 0.0f);
 	}
 
 	~SharedState()
 	{
+		release_all(sceneSources);
 		obs_source_release(audioSource);
 		obs_source_release(holdScene);
+	}
+
+	[[nodiscard]] bool mixes_scene_sources() const noexcept
+	{
+		return config.mode == HoldAudioMode::SceneMix || config.mode == HoldAudioMode::ReservedTrack;
 	}
 
 	obs_source_t *holdScene = nullptr;
 	obs_source_t *audioSource = nullptr;
 	HoldAudioConfig config;
+	// Visible audio sources of the hold scene (strong refs). Written by the UI
+	// thread, read by the libobs audio thread, both under sceneSourcesMutex.
+	std::mutex sceneSourcesMutex;
+	std::vector<obs_source_t *> sceneSources;
+	// Mix scratch for the audio thread: [mixer][channel][frame].
+	std::vector<float> mixBuffer;
 	// Allocate before either audio clock starts. Silence never needs the
 	// roughly 3 MiB PCM ring; a running ring stays alive after force_silence()
 	// until both clocks stop so neither callback can race its destruction.
@@ -226,6 +292,88 @@ void HoldAudioTap::main_clock_output(void *param, std::size_t, audio_data *data)
 	state->lastMainClockFrames = data->frames;
 }
 
+void HoldAudioTap::refresh_audio_tree()
+{
+	if (!state_ || !state_->mixes_scene_sources() || !state_->holdScene)
+		return;
+	std::vector<obs_source_t *> fresh;
+	std::vector<obs_source_t *> visited;
+	collect_audio_sources(state_->holdScene, fresh, visited, 0);
+	{
+		std::scoped_lock lock(state_->sceneSourcesMutex);
+		if (fresh == state_->sceneSources) {
+			release_all(fresh);
+			return;
+		}
+		state_->sceneSources.swap(fresh);
+	}
+	// The audio thread mixes under the same mutex, so the previous list can
+	// be released outside it without racing a render.
+	release_all(fresh);
+}
+
+// Mixes the visible audio sources of the hold scene, each exactly once, the
+// way scene_audio_render aligns children by timestamp but without skipping
+// sources libobs marked as duplicated.
+bool HoldAudioTap::mix_scene_sources(SharedState &state, uint64_t *timestampNs, const uint32_t mixers,
+				     const std::size_t channels, const uint32_t sampleRate) noexcept
+{
+	std::scoped_lock lock(state.sceneSourcesMutex);
+	uint64_t start = 0;
+	for (obs_source_t *source : state.sceneSources) {
+		if (obs_source_audio_pending(source))
+			continue;
+		const uint64_t ts = obs_source_get_audio_timestamp(source);
+		// A source which stopped rendering keeps its last timestamp; anything
+		// already queued is stale and must not hold the window back.
+		if (ts == 0 || ts <= state.lastPushedTimestampNs)
+			continue;
+		if (start == 0 || ts < start)
+			start = ts;
+	}
+	if (start == 0)
+		return false;
+
+	const std::size_t usedChannels = std::min<std::size_t>(channels, MAX_AUDIO_CHANNELS);
+	obs_source_audio_mix mix{};
+	for (std::size_t mixer = 0; mixer < MAX_AUDIO_MIXES; ++mixer) {
+		for (std::size_t channel = 0; channel < usedChannels; ++channel) {
+			float *plane = state.mixBuffer.data() + (mixer * MAX_AUDIO_CHANNELS + channel) * AUDIO_OUTPUT_FRAMES;
+			mix.output[mixer].data[channel] = plane;
+			if (mixers & (1U << mixer))
+				std::memset(plane, 0, AUDIO_OUTPUT_FRAMES * sizeof(float));
+		}
+	}
+	for (obs_source_t *source : state.sceneSources) {
+		if (obs_source_audio_pending(source))
+			continue;
+		const uint64_t ts = obs_source_get_audio_timestamp(source);
+		if (ts == 0 || ts < start)
+			continue;
+		const uint64_t offsetFrames = (ts - start) * sampleRate / 1'000'000'000ULL;
+		if (offsetFrames >= AUDIO_OUTPUT_FRAMES)
+			continue;
+		const std::size_t pos = static_cast<std::size_t>(offsetFrames);
+		obs_source_audio_mix child{};
+		obs_source_get_audio_mix(source, &child);
+		for (std::size_t mixer = 0; mixer < MAX_AUDIO_MIXES; ++mixer) {
+			if ((mixers & (1U << mixer)) == 0)
+				continue;
+			for (std::size_t channel = 0; channel < usedChannels; ++channel) {
+				const float *in = child.output[mixer].data[channel];
+				float *out = mix.output[mixer].data[channel];
+				if (!in)
+					continue;
+				for (std::size_t frame = pos; frame < AUDIO_OUTPUT_FRAMES; ++frame)
+					out[frame] += in[frame - pos];
+			}
+		}
+	}
+	push(state, mix, start, mixers, channels, sampleRate);
+	*timestampNs = start;
+	return true;
+}
+
 bool HoldAudioTap::source_audio_render(void *data, uint64_t *timestampNs, obs_source_audio_mix *output,
 				       const uint32_t mixers, const std::size_t channels, const std::size_t sampleRate)
 {
@@ -233,9 +381,13 @@ bool HoldAudioTap::source_audio_render(void *data, uint64_t *timestampNs, obs_so
 	if (!context || !timestampNs || !output)
 		return false;
 	SharedState &state = *context->state;
-	if ((state.config.mode != HoldAudioMode::SceneMix && state.config.mode != HoldAudioMode::DedicatedSource &&
-	     state.config.mode != HoldAudioMode::ReservedTrack) ||
-	    !state.audioSource || state.forceSilence.load(std::memory_order_acquire) ||
+	if (state.forceSilence.load(std::memory_order_acquire))
+		return false;
+	// The wrapper's own (zeroed) output is never mixed anywhere: it is the
+	// root of a private view without audio mixing. Hold PCM goes only to the FIFO.
+	if (state.mixes_scene_sources())
+		return mix_scene_sources(state, timestampNs, mixers, channels, static_cast<uint32_t>(sampleRate));
+	if (state.config.mode != HoldAudioMode::DedicatedSource || !state.audioSource ||
 	    obs_source_audio_pending(state.audioSource))
 		return false;
 
@@ -309,6 +461,16 @@ void HoldAudioTap::stop()
 	if (wrapperSource_)
 		obs_source_release(wrapperSource_);
 	wrapperSource_ = nullptr;
+	// libobs may destroy the wrapper (and with it the last SharedState ref)
+	// later; drop the scene source refs now so a removed source is freed.
+	if (state_) {
+		std::vector<obs_source_t *> released;
+		{
+			std::scoped_lock lock(state_->sceneSourcesMutex);
+			released.swap(state_->sceneSources);
+		}
+		release_all(released);
+	}
 }
 
 bool HoldAudioTap::pull(const uint64_t callbackStartNs, uint64_t *newTimestampNs, const uint32_t activeMixers,

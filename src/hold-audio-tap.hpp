@@ -24,10 +24,18 @@ struct HoldAudioConfig {
 
 /**
  * A private composite source which keeps the hold scene in libobs's normal
- * audio render tree.  Its audio_render callback runs after the child source,
- * copies the already-mixed PCM into a bounded SPSC FIFO, and returns
- * immediately.  The private hold encoder consumes that FIFO on its own audio
- * clock.
+ * audio render tree.  Its audio_render callback runs after the scene's audio
+ * sources, mixes their PCM into a bounded SPSC FIFO, and returns immediately.
+ * The private hold encoder consumes that FIFO on its own audio clock.
+ *
+ * Scene modes do not read the hold scene's own mix: libobs drops every audio
+ * source that appears twice in the audio tree from all scene mixes
+ * (audio_is_duplicated) and plays it once at the root.  A source shared with
+ * Program, or the hold scene itself shown in Program, would therefore be
+ * silent in the scene mix.  The tap mixes each visible audio source of the
+ * hold scene (nested scenes and groups included) exactly once from its own
+ * post-volume buffer instead, so shared sources keep their volume and mute
+ * and are neither lost nor doubled.
  */
 class HoldAudioTap {
 public:
@@ -43,6 +51,9 @@ public:
 	bool create(std::string &error);
 	bool connect_main_clock(audio_t *audio, std::size_t mixerIndex, std::string &error);
 	bool force_silence() noexcept;
+	// Re-reads the visible audio sources of the hold scene (UI thread).
+	// Cheap; called on every controller tick while the hold graph is alive.
+	void refresh_audio_tree();
 	[[nodiscard]] bool silence_forced() const noexcept;
 	void stop();
 
@@ -72,6 +83,8 @@ private:
 					uint32_t mixers, std::size_t channels, std::size_t sampleRate);
 	static void main_clock_output(void *param, std::size_t mixerIndex, audio_data *data);
 
+	static bool mix_scene_sources(SharedState &state, uint64_t *timestampNs, uint32_t mixers, std::size_t channels,
+				      uint32_t sampleRate) noexcept;
 	static void push(SharedState &state, const obs_source_audio_mix &mix, uint64_t timestampNs, uint32_t mixers,
 			 std::size_t channels, uint32_t sampleRate) noexcept;
 
